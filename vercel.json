@@ -5,7 +5,7 @@
       "destination": "/app/index.html"
     },
     {
-      "source": "/script.js",
+      "source": "/app/script.js",
       "destination": "/app/script.js"
     }
   ],

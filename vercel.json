@@ -1,7 +1,16 @@
+{
+  "rewrites": [
+    { "source": "/(.*)", "destination": "/app/index.html" }
+  ],
+  "headers": [
     {
-      "rewrites": [
-        { "source": "/(.*)", "destination": "/app/index.html" }
+      "source": "/app/script.js",
+      "headers": [
+        {
+          "key": "Content-Type",
+          "value": "application/javascript"
+        }
       ]
     }
-
-    
+  ]
+}

@@ -1,8 +1,12 @@
 {
   "rewrites": [
     {
-      "source": "/(.*)",
+      "source": "/",
       "destination": "/app/index.html"
+    },
+    {
+      "source": "/script.js",
+      "destination": "/app/script.js"
     }
   ],
   "headers": [

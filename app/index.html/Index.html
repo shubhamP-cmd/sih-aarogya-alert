@@ -1,0 +1,554 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Community Health Reporter</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f3f4f6;
+        }
+    </style>
+</head>
+<body class="p-4">
+    <div class="max-w-md mx-auto bg-white p-6 rounded-xl shadow-lg mt-10">
+        <!-- Language Switcher -->
+        <div class="flex justify-end mb-4">
+            <select id="language-switcher" class="p-2 rounded-lg border border-gray-300">
+                <option value="en">English</option>
+                <option value="bn">বাংলা</option>
+            </select>
+        </div>
+
+        <h1 class="text-3xl font-bold text-center text-slate-800 mb-6">
+            <i class="fas fa-notes-medical text-green-500 mr-2"></i> <span id="app-title">Report New Cases</span>
+        </h1>
+        <p class="text-center text-gray-500 mb-6" id="app-subtitle">For ASHA workers and community volunteers</p>
+
+        <form id="reportForm" class="space-y-4">
+            <div>
+                <label for="location" class="block text-gray-700 font-medium mb-1" id="label-location">Location / Village</label>
+                <input type="text" id="location" placeholder="Enter village or location" required
+                    class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 transition duration-200">
+            </div>
+            <div>
+                <label for="diseaseType" class="block text-gray-700 font-medium mb-1" id="label-disease">Disease Type</label>
+                <select id="diseaseType" required
+                    class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 transition duration-200">
+                    <option value="" disabled selected id="select-disease-placeholder">Select a disease</option>
+                    <option value="Cholera">Cholera</option>
+                    <option value="Typhoid">Typhoid</option>
+                    <option value="Dengue">Dengue</option>
+                    <option value="Malaria">Malaria</option>
+                    <option value="Other">Other</option>
+                </select>
+            </div>
+            <div>
+                <label for="caseCount" class="block text-gray-700 font-medium mb-1" id="label-cases">Number of Cases</label>
+                <input type="number" id="caseCount" min="1" placeholder="Enter number of new cases" required
+                    class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 transition duration-200">
+            </div>
+            <div id="statusMessage" class="hidden text-center text-sm font-medium"></div>
+            <button type="submit" id="submit-button"
+                class="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-4 rounded-lg shadow-md focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 transition duration-200">
+                Submit Report
+            </button>
+        </form>
+
+        <!-- Educational Module section, a direct response to the problem statement -->
+        <div class="mt-8 pt-6 border-t border-gray-200">
+            <h2 class="text-xl font-bold text-slate-700 mb-4" id="education-title">Hygiene & Prevention</h2>
+            <div class="space-y-4 text-sm text-gray-600" id="education-content">
+                <div class="flex items-start space-x-2">
+                    <i class="fas fa-tint text-blue-500 mt-1"></i>
+                    <p><strong class="font-medium">Clean Water:</strong> Always drink from a safe, clean water source. Boil water if necessary.</p>
+                </div>
+                <div class="flex items-start space-x-2">
+                    <i class="fas fa-hand-holding-water text-blue-500 mt-1"></i>
+                    <p><strong class="font-medium">Hand Washing:</strong> Wash hands thoroughly with soap and water before eating and after using the toilet.</p>
+                </div>
+                <div class="flex items-start space-x-2">
+                    <i class="fas fa-trash-alt text-blue-500 mt-1"></i>
+                    <p><strong class="font-medium">Proper Sanitation:</strong> Use and maintain clean toilets. Dispose of waste properly to avoid contamination.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+    <script type="module">
+        // Firebase imports for the app
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-app.js";
+        import { getFirestore, collection, addDoc } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-firestore.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-auth.js";
+        import { setLogLevel } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-firestore.js";
+
+        // Global variables provided by the Canvas environment
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        const firebaseConfig = {
+            apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
+            authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
+            projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
+            storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
+            messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+            appId: import.meta.env.VITE_FIREBASE_APP_ID
+        };
+        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+
+        // Offline data management keys
+        const OFFLINE_REPORTS_KEY = 'offline_disease_reports';
+
+        // Translations for multilingual support
+        const translations = {
+            en: {
+                appTitle: "Report New Cases",
+                appSubtitle: "For ASHA workers and community volunteers",
+                labelLocation: "Location / Village",
+                labelDisease: "Disease Type",
+                labelCases: "Number of Cases",
+                selectDiseasePlaceholder: "Select a disease",
+                submitButton: "Submit Report",
+                statusSuccess: "Report submitted successfully!",
+                statusOffline: "No internet. Report saved locally.",
+                statusError: "Error submitting report. Please try again.",
+                educationTitle: "Hygiene & Prevention",
+                educationContent: {
+                    cleanWater: "Clean Water: Always drink from a safe, clean water source. Boil water if necessary.",
+                    handWashing: "Hand Washing: Wash hands thoroughly with soap and water before eating and after using the toilet.",
+                    sanitation: "Proper Sanitation: Use and maintain clean toilets. Dispose of waste properly to avoid contamination."
+                }
+            },
+            bn: {
+                appTitle: "নতুন কেস রিপোর্ট করুন",
+                appSubtitle: "আশা কর্মী এবং স্বেচ্ছাসেবকদের জন্য",
+                labelLocation: "অবস্থান / গ্রাম",
+                labelDisease: "রোগের ধরন",
+                labelCases: "কেসের সংখ্যা",
+                selectDiseasePlaceholder: "একটি রোগ নির্বাচন করুন",
+                submitButton: "রিপোর্ট জমা দিন",
+                statusSuccess: "রিপোর্ট সফলভাবে জমা দেওয়া হয়েছে!",
+                statusOffline: "ইন্টারনেট নেই। রিপোর্ট স্থানীয়ভাবে সংরক্ষিত হয়েছে।",
+                statusError: "রিপোর্ট জমা দিতে সমস্যা হয়েছে। আবার চেষ্টা করুন।",
+                educationTitle: "স্বাস্থ্যবিধি ও প্রতিরোধ",
+                educationContent: {
+                    cleanWater: "বিশুদ্ধ জল: সবসময় নিরাপদ ও পরিষ্কার জল পান করুন। প্রয়োজনে জল ফুটিয়ে নিন।",
+                    handWashing: "হাত ধোয়া: খাওয়ার আগে এবং টয়লেট ব্যবহারের পরে সাবান দিয়ে হাত ভালোভাবে ধুয়ে নিন।",
+                    sanitation: "সঠিক স্যানিটেশন: পরিষ্কার টয়লেট ব্যবহার করুন এবং রক্ষণাবেক্ষণ করুন। দূষণ এড়াতে বর্জ্য সঠিকভাবে নিষ্পত্তি করুন।"
+                }
+            }
+        };
+
+        // Function to update the UI with selected language
+        function updateUI(lang) {
+            document.getElementById('app-title').textContent = translations[lang].appTitle;
+            document.getElementById('app-subtitle').textContent = translations[lang].appSubtitle;
+            document.getElementById('label-location').textContent = translations[lang].labelLocation;
+            document.getElementById('label-disease').textContent = translations[lang].labelDisease;
+            document.getElementById('label-cases').textContent = translations[lang].labelCases;
+            document.getElementById('select-disease-placeholder').textContent = translations[lang].selectDiseasePlaceholder;
+            document.getElementById('submit-button').textContent = translations[lang].submitButton;
+            document.getElementById('education-title').textContent = translations[lang].educationTitle;
+            const content = translations[lang].educationContent;
+            document.getElementById('education-content').innerHTML = `
+                <div class="flex items-start space-x-2">
+                    <i class="fas fa-tint text-blue-500 mt-1"></i>
+                    <p><strong class="font-medium">${content.cleanWater.split(':')[0]}:</strong> ${content.cleanWater.split(':')[1]}</p>
+                </div>
+                <div class="flex items-start space-x-2">
+                    <i class="fas fa-hand-holding-water text-blue-500 mt-1"></i>
+                    <p><strong class="font-medium">${content.handWashing.split(':')[0]}:</strong> ${content.handWashing.split(':')[1]}</p>
+                </div>
+                <div class="flex items-start space-x-2">
+                    <i class="fas fa-trash-alt text-blue-500 mt-1"></i>
+                    <p><strong class="font-medium">${content.sanitation.split(':')[0]}:</strong> ${content.sanitation.split(':')[1]}</p>
+                </div>
+            `;
+        }
+
+        // Initialize Firebase
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+        const auth = getAuth(app);
+        setLogLevel('debug');
+
+        let isAuthReady = false;
+        let authUser = null;
+
+        // Authentication State Listener
+        onAuthStateChanged(auth, (user) => {
+            if (user) {
+                isAuthReady = true;
+                authUser = user;
+                console.log("Authenticated successfully.");
+                syncOfflineReports(); // Sync any reports saved while offline
+            } else {
+                signInAnonymously(auth).catch(error => console.error("Authentication error:", error));
+            }
+        });
+
+        // Get the current user's ID or a random one
+        const getUserId = () => authUser?.uid || crypto.randomUUID();
+
+        // Save report to local storage
+        function saveOffline(reportData) {
+            let offlineReports = JSON.parse(localStorage.getItem(OFFLINE_REPORTS_KEY)) || [];
+            offlineReports.push(reportData);
+            localStorage.setItem(OFFLINE_REPORTS_KEY, JSON.stringify(offlineReports));
+            return offlineReports.length;
+        }
+
+        // Sync reports from local storage to Firebase
+        async function syncOfflineReports() {
+            if (!isAuthReady) return;
+
+            const offlineReports = JSON.parse(localStorage.getItem(OFFLINE_REPORTS_KEY)) || [];
+            if (offlineReports.length === 0) return;
+
+            console.log(`Syncing ${offlineReports.length} offline reports...`);
+            const dataCollectionPath = `/artifacts/${appId}/public/data/diseaseReports`;
+
+            try {
+                for (const report of offlineReports) {
+                    await addDoc(collection(db, dataCollectionPath), report);
+                }
+                localStorage.removeItem(OFFLINE_REPORTS_KEY); // Clear local storage after successful sync
+                console.log("Offline reports synced successfully.");
+            } catch (e) {
+                console.error("Error syncing offline reports: ", e);
+                // Keep reports in local storage to try again later
+            }
+        }
+
+        // Handle form submission
+        document.getElementById('reportForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            const form = e.target;
+            const statusMessage = document.getElementById('statusMessage');
+            statusMessage.classList.add('hidden');
+
+            const reportData = {
+                location: form.location.value,
+                diseaseType: form.diseaseType.value,
+                caseCount: parseInt(form.caseCount.value),
+                reporterId: getUserId(),
+                source: "Manual Test Kit", // Addressing the problem statement point
+                timestamp: new Date()
+            };
+
+            const dataCollectionPath = `/artifacts/${appId}/public/data/diseaseReports`;
+
+            // Check for internet connection
+            if (navigator.onLine) {
+                try {
+                    await addDoc(collection(db, dataCollectionPath), reportData);
+                    statusMessage.textContent = translations[document.getElementById('language-switcher').value].statusSuccess;
+                    statusMessage.classList.remove('hidden');
+                    statusMessage.classList.add('text-green-600');
+                    form.reset();
+                } catch (e) {
+                    console.error("Error adding document: ", e);
+                    statusMessage.textContent = translations[document.getElementById('language-switcher').value].statusError;
+                    statusMessage.classList.remove('hidden');
+                    statusMessage.classList.add('text-red-600');
+                }
+            } else {
+                saveOffline(reportData);
+                statusMessage.textContent = translations[document.getElementById('language-switcher').value].statusOffline;
+                statusMessage.classList.remove('hidden');
+                statusMessage.classList.add('text-yellow-600');
+                form.reset();
+            }
+        });
+
+        // Listen for language changes
+        document.getElementById('language-switcher').addEventListener('change', (e) => {
+            updateUI(e.target.value);
+        });
+
+        // Initialize UI with default language
+        updateUI('en');
+    </script>
+</body>
+</html>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Community Health Reporter</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #f3f4f6;
+        }
+    </style>
+</head>
+<body class="p-4">
+    <div class="max-w-md mx-auto bg-white p-6 rounded-xl shadow-lg mt-10">
+        <!-- Language Switcher -->
+        <div class="flex justify-end mb-4">
+            <select id="language-switcher" class="p-2 rounded-lg border border-gray-300">
+                <option value="en">English</option>
+                <option value="bn">বাংলা</option>
+            </select>
+        </div>
+
+        <h1 class="text-3xl font-bold text-center text-slate-800 mb-6">
+            <i class="fas fa-notes-medical text-green-500 mr-2"></i> <span id="app-title">Report New Cases</span>
+        </h1>
+        <p class="text-center text-gray-500 mb-6" id="app-subtitle">For ASHA workers and community volunteers</p>
+
+        <form id="reportForm" class="space-y-4">
+            <div>
+                <label for="location" class="block text-gray-700 font-medium mb-1" id="label-location">Location / Village</label>
+                <input type="text" id="location" placeholder="Enter village or location" required
+                    class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 transition duration-200">
+            </div>
+            <div>
+                <label for="diseaseType" class="block text-gray-700 font-medium mb-1" id="label-disease">Disease Type</label>
+                <select id="diseaseType" required
+                    class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 transition duration-200">
+                    <option value="" disabled selected id="select-disease-placeholder">Select a disease</option>
+                    <option value="Cholera">Cholera</option>
+                    <option value="Typhoid">Typhoid</option>
+                    <option value="Dengue">Dengue</option>
+                    <option value="Malaria">Malaria</option>
+                    <option value="Other">Other</option>
+                </select>
+            </div>
+            <div>
+                <label for="caseCount" class="block text-gray-700 font-medium mb-1" id="label-cases">Number of Cases</label>
+                <input type="number" id="caseCount" min="1" placeholder="Enter number of new cases" required
+                    class="w-full px-4 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-green-500 transition duration-200">
+            </div>
+            <div id="statusMessage" class="hidden text-center text-sm font-medium"></div>
+            <button type="submit" id="submit-button"
+                class="w-full bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-4 rounded-lg shadow-md focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2 transition duration-200">
+                Submit Report
+            </button>
+        </form>
+
+        <!-- Educational Module section, a direct response to the problem statement -->
+        <div class="mt-8 pt-6 border-t border-gray-200">
+            <h2 class="text-xl font-bold text-slate-700 mb-4" id="education-title">Hygiene & Prevention</h2>
+            <div class="space-y-4 text-sm text-gray-600" id="education-content">
+                <div class="flex items-start space-x-2">
+                    <i class="fas fa-tint text-blue-500 mt-1"></i>
+                    <p><strong class="font-medium">Clean Water:</strong> Always drink from a safe, clean water source. Boil water if necessary.</p>
+                </div>
+                <div class="flex items-start space-x-2">
+                    <i class="fas fa-hand-holding-water text-blue-500 mt-1"></i>
+                    <p><strong class="font-medium">Hand Washing:</strong> Wash hands thoroughly with soap and water before eating and after using the toilet.</p>
+                </div>
+                <div class="flex items-start space-x-2">
+                    <i class="fas fa-trash-alt text-blue-500 mt-1"></i>
+                    <p><strong class="font-medium">Proper Sanitation:</strong> Use and maintain clean toilets. Dispose of waste properly to avoid contamination.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+    <script type="module">
+        // Firebase imports for the app
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-app.js";
+        import { getFirestore, collection, addDoc } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-firestore.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-auth.js";
+        import { setLogLevel } from "https://www.gstatic.com/firebasejs/10.7.0/firebase-firestore.js";
+
+        // Global variables provided by the Canvas environment
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        const firebaseConfig = {
+            apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
+            authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
+            projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
+            storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
+            messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+            appId: import.meta.env.VITE_FIREBASE_APP_ID
+        };
+        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+
+        // Offline data management keys
+        const OFFLINE_REPORTS_KEY = 'offline_disease_reports';
+
+        // Translations for multilingual support
+        const translations = {
+            en: {
+                appTitle: "Report New Cases",
+                appSubtitle: "For ASHA workers and community volunteers",
+                labelLocation: "Location / Village",
+                labelDisease: "Disease Type",
+                labelCases: "Number of Cases",
+                selectDiseasePlaceholder: "Select a disease",
+                submitButton: "Submit Report",
+                statusSuccess: "Report submitted successfully!",
+                statusOffline: "No internet. Report saved locally.",
+                statusError: "Error submitting report. Please try again.",
+                educationTitle: "Hygiene & Prevention",
+                educationContent: {
+                    cleanWater: "Clean Water: Always drink from a safe, clean water source. Boil water if necessary.",
+                    handWashing: "Hand Washing: Wash hands thoroughly with soap and water before eating and after using the toilet.",
+                    sanitation: "Proper Sanitation: Use and maintain clean toilets. Dispose of waste properly to avoid contamination."
+                }
+            },
+            bn: {
+                appTitle: "নতুন কেস রিপোর্ট করুন",
+                appSubtitle: "আশা কর্মী এবং স্বেচ্ছাসেবকদের জন্য",
+                labelLocation: "অবস্থান / গ্রাম",
+                labelDisease: "রোগের ধরন",
+                labelCases: "কেসের সংখ্যা",
+                selectDiseasePlaceholder: "একটি রোগ নির্বাচন করুন",
+                submitButton: "রিপোর্ট জমা দিন",
+                statusSuccess: "রিপোর্ট সফলভাবে জমা দেওয়া হয়েছে!",
+                statusOffline: "ইন্টারনেট নেই। রিপোর্ট স্থানীয়ভাবে সংরক্ষিত হয়েছে।",
+                statusError: "রিপোর্ট জমা দিতে সমস্যা হয়েছে। আবার চেষ্টা করুন।",
+                educationTitle: "স্বাস্থ্যবিধি ও প্রতিরোধ",
+                educationContent: {
+                    cleanWater: "বিশুদ্ধ জল: সবসময় নিরাপদ ও পরিষ্কার জল পান করুন। প্রয়োজনে জল ফুটিয়ে নিন।",
+                    handWashing: "হাত ধোয়া: খাওয়ার আগে এবং টয়লেট ব্যবহারের পরে সাবান দিয়ে হাত ভালোভাবে ধুয়ে নিন।",
+                    sanitation: "সঠিক স্যানিটেশন: পরিষ্কার টয়লেট ব্যবহার করুন এবং রক্ষণাবেক্ষণ করুন। দূষণ এড়াতে বর্জ্য সঠিকভাবে নিষ্পত্তি করুন।"
+                }
+            }
+        };
+
+        // Function to update the UI with selected language
+        function updateUI(lang) {
+            document.getElementById('app-title').textContent = translations[lang].appTitle;
+            document.getElementById('app-subtitle').textContent = translations[lang].appSubtitle;
+            document.getElementById('label-location').textContent = translations[lang].labelLocation;
+            document.getElementById('label-disease').textContent = translations[lang].labelDisease;
+            document.getElementById('label-cases').textContent = translations[lang].labelCases;
+            document.getElementById('select-disease-placeholder').textContent = translations[lang].selectDiseasePlaceholder;
+            document.getElementById('submit-button').textContent = translations[lang].submitButton;
+            document.getElementById('education-title').textContent = translations[lang].educationTitle;
+            const content = translations[lang].educationContent;
+            document.getElementById('education-content').innerHTML = `
+                <div class="flex items-start space-x-2">
+                    <i class="fas fa-tint text-blue-500 mt-1"></i>
+                    <p><strong class="font-medium">${content.cleanWater.split(':')[0]}:</strong> ${content.cleanWater.split(':')[1]}</p>
+                </div>
+                <div class="flex items-start space-x-2">
+                    <i class="fas fa-hand-holding-water text-blue-500 mt-1"></i>
+                    <p><strong class="font-medium">${content.handWashing.split(':')[0]}:</strong> ${content.handWashing.split(':')[1]}</p>
+                </div>
+                <div class="flex items-start space-x-2">
+                    <i class="fas fa-trash-alt text-blue-500 mt-1"></i>
+                    <p><strong class="font-medium">${content.sanitation.split(':')[0]}:</strong> ${content.sanitation.split(':')[1]}</p>
+                </div>
+            `;
+        }
+
+        // Initialize Firebase
+        const app = initializeApp(firebaseConfig);
+        const db = getFirestore(app);
+        const auth = getAuth(app);
+        setLogLevel('debug');
+
+        let isAuthReady = false;
+        let authUser = null;
+
+        // Authentication State Listener
+        onAuthStateChanged(auth, (user) => {
+            if (user) {
+                isAuthReady = true;
+                authUser = user;
+                console.log("Authenticated successfully.");
+                syncOfflineReports(); // Sync any reports saved while offline
+            } else {
+                signInAnonymously(auth).catch(error => console.error("Authentication error:", error));
+            }
+        });
+
+        // Get the current user's ID or a random one
+        const getUserId = () => authUser?.uid || crypto.randomUUID();
+
+        // Save report to local storage
+        function saveOffline(reportData) {
+            let offlineReports = JSON.parse(localStorage.getItem(OFFLINE_REPORTS_KEY)) || [];
+            offlineReports.push(reportData);
+            localStorage.setItem(OFFLINE_REPORTS_KEY, JSON.stringify(offlineReports));
+            return offlineReports.length;
+        }
+
+        // Sync reports from local storage to Firebase
+        async function syncOfflineReports() {
+            if (!isAuthReady) return;
+
+            const offlineReports = JSON.parse(localStorage.getItem(OFFLINE_REPORTS_KEY)) || [];
+            if (offlineReports.length === 0) return;
+
+            console.log(`Syncing ${offlineReports.length} offline reports...`);
+            const dataCollectionPath = `/artifacts/${appId}/public/data/diseaseReports`;
+
+            try {
+                for (const report of offlineReports) {
+                    await addDoc(collection(db, dataCollectionPath), report);
+                }
+                localStorage.removeItem(OFFLINE_REPORTS_KEY); // Clear local storage after successful sync
+                console.log("Offline reports synced successfully.");
+            } catch (e) {
+                console.error("Error syncing offline reports: ", e);
+                // Keep reports in local storage to try again later
+            }
+        }
+
+        // Handle form submission
+        document.getElementById('reportForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+
+            const form = e.target;
+            const statusMessage = document.getElementById('statusMessage');
+            statusMessage.classList.add('hidden');
+
+            const reportData = {
+                location: form.location.value,
+                diseaseType: form.diseaseType.value,
+                caseCount: parseInt(form.caseCount.value),
+                reporterId: getUserId(),
+                source: "Manual Test Kit", // Addressing the problem statement point
+                timestamp: new Date()
+            };
+
+            const dataCollectionPath = `/artifacts/${appId}/public/data/diseaseReports`;
+
+            // Check for internet connection
+            if (navigator.onLine) {
+                try {
+                    await addDoc(collection(db, dataCollectionPath), reportData);
+                    statusMessage.textContent = translations[document.getElementById('language-switcher').value].statusSuccess;
+                    statusMessage.classList.remove('hidden');
+                    statusMessage.classList.add('text-green-600');
+                    form.reset();
+                } catch (e) {
+                    console.error("Error adding document: ", e);
+                    statusMessage.textContent = translations[document.getElementById('language-switcher').value].statusError;
+                    statusMessage.classList.remove('hidden');
+                    statusMessage.classList.add('text-red-600');
+                }
+            } else {
+                saveOffline(reportData);
+                statusMessage.textContent = translations[document.getElementById('language-switcher').value].statusOffline;
+                statusMessage.classList.remove('hidden');
+                statusMessage.classList.add('text-yellow-600');
+                form.reset();
+            }
+        });
+
+        // Listen for language changes
+        document.getElementById('language-switcher').addEventListener('change', (e) => {
+            updateUI(e.target.value);
+        });
+
+        // Initialize UI with default language
+        updateUI('en');
+    </script>
+</body>
+</html>
